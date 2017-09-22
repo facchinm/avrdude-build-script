@@ -1,0 +1,100 @@
+From a20eeaf287e1a03cfbe965e8c34885dee9158781 Mon Sep 17 00:00:00 2001
+From: Martino Facchin <m.facchin@arduino.cc>
+Date: Fri, 22 Sep 2017 14:57:54 +0200
+Subject: [PATCH 2/2] implement serial number read
+
+---
+ arduino.c        | 39 +++++++++++++++++++++++++++++++++++++++
+ stk500.c         |  2 +-
+ stk500_private.h |  5 +++--
+ 3 files changed, 43 insertions(+), 3 deletions(-)
+
+diff --git a/arduino.c b/arduino.c
+index ccb0eaa..3044abd 100644
+--- arduino.c
++++ arduino.c
+@@ -37,6 +37,43 @@
+ #include "stk500.h"
+ #include "arduino.h"
+ 
++static int arduino_read_serialnumber(PROGRAMMER * pgm, AVRPART * p, AVRMEM * m)
++{
++  unsigned char buf[32];
++
++  /* Signature byte reads are always 3 bytes. */
++
++  buf[0] = Cmnd_STK_READ_SERIALNUMBER;
++  buf[1] = Sync_CRC_EOP;
++
++  serial_send(&pgm->fd, buf, 2);
++
++  if (serial_recv(&pgm->fd, buf, 12) < 0)
++    return -1;
++  if (buf[0] == Resp_STK_NOSYNC) {
++    avrdude_message(MSG_INFO, "%s: stk500_cmd(): programmer is out of sync\n",
++      progname);
++  return -1;
++  } else if (buf[0] != Resp_STK_INSYNC) {
++    avrdude_message(MSG_INFO, "\n%s: arduino_read_serial_bytes(): (a) protocol error, "
++                    "expect=0x%02x, resp=0x%02x\n",
++                    progname, Resp_STK_INSYNC, buf[0]);
++  return -2;
++  }
++
++  if (buf[11] != Resp_STK_OK) {
++    avrdude_message(MSG_INFO, "\n%s: arduino_read_serial_bytes(): (b) protocol error, "
++                    "expect=0x%02x, resp=0x%02x\n",
++                    progname, Resp_STK_OK, buf[11]);
++    return -3;
++  }
++
++  avrdude_message(MSG_INFO, "\n%s: arduino_read_serial_bytes(): %01X%01X  %01X%01X  %01X%01X  %01X%01X  %01X%01X  \n",
++                    progname, buf[1] & 0xF, buf[1] >> 4, buf[3] & 0xF, buf[3] >> 4, buf[5] & 0xF, buf[5] >> 4, buf[7] & 0xF, buf[7] >> 4, buf[9] & 0xF , buf[9] >> 4);
++
++  return 10;
++}
++
+ /* read signature bytes - arduino version */
+ static int arduino_read_sig_bytes(PROGRAMMER * pgm, AVRPART * p, AVRMEM * m)
+ {
+@@ -77,6 +114,8 @@ static int arduino_read_sig_bytes(PROGRAMMER * pgm, AVRPART * p, AVRMEM * m)
+   m->buf[1] = buf[2];
+   m->buf[2] = buf[3];
+ 
++  arduino_read_serialnumber(pgm, p, m);
++
+   return 3;
+ }
+ 
+diff --git a/stk500.c b/stk500.c
+index 213c9f5..3a2f510 100644
+--- stk500.c
++++ stk500.c
+@@ -431,7 +431,7 @@ static int stk500_initialize(PROGRAMMER * pgm, AVRPART * p)
+   else
+     n_extparms = 3;
+ 
+-fprintf(stderr,
++  fprintf(stderr,
+             "%s: stk500_initialize(): n_extparms %d mayor %d minor %d \n",
+             progname, n_extparms,maj, min);
+   tries = 0;
+diff --git a/stk500_private.h b/stk500_private.h
+index 7efe866..e34325f 100644
+--- stk500_private.h
++++ stk500_private.h
+@@ -63,8 +63,9 @@
+ #define Cmnd_STK_READ_PAGE         0x74  // ' '
+ #define Cmnd_STK_READ_SIGN         0x75  // ' '
+ #define Cmnd_STK_READ_OSCCAL       0x76  // ' '
+-#define Cmnd_STK_READ_FUSE_EXT     0x77  // ' '		
+-#define Cmnd_STK_READ_OSCCAL_EXT   0x78  // ' '     
++#define Cmnd_STK_READ_FUSE_EXT     0x77  // ' '
++#define Cmnd_STK_READ_OSCCAL_EXT   0x78  // ' '
++#define Cmnd_STK_READ_SERIALNUMBER 0x79  // ' '
+ 
+ // *****************[ STK Parameter constants ]***************************
+ 
+-- 
+2.14.1
+
